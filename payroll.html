@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>給料計算ノート</title>
+<style>
+:root{--bg:#f3f5f2;--card:#fff;--ink:#1d2a26;--sub:#68756f;--line:#d9dfdb;--acc:#1f6f5c;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141a18;--card:#1e2623;--ink:#e8eeea;--sub:#93a09a;--line:#34403b;--acc:#5fc2a8}}
+:root[data-theme="dark"]{--bg:#141a18;--card:#1e2623;--ink:#e8eeea;--sub:#93a09a;--line:#34403b;--acc:#5fc2a8}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Hiragino Sans","Noto Sans JP","Yu Gothic",Meiryo,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 14px;letter-spacing:.04em}
+h2{font-size:16px;margin:0 0 10px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.ws{border-left:6px solid var(--c);padding:10px 12px;margin-bottom:12px;background:var(--bg);border-radius:6px}
+.row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-end;margin-bottom:8px}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--sub);gap:2px}
+.rng{display:flex;align-items:center;gap:4px}
+input,select,button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-height:34px}
+input[type=text]{width:9em}input[type=number]{width:6.5em}input.s{width:4.5em}
+button{cursor:pointer}button:hover{border-color:var(--acc)}
+button.pri{background:var(--acc);color:var(--bg);border-color:var(--acc);font-weight:700}
+button.add{width:100%;border-style:dashed;font-size:18px;color:var(--acc)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.nav b{font-size:17px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.dow{text-align:center;font-size:12px;color:var(--sub)}
+.day{min-height:68px;border:1px solid var(--line);border-radius:6px;padding:3px;background:var(--card);text-align:left;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.day.sel{outline:3px solid var(--acc);outline-offset:-2px;background:color-mix(in srgb,var(--acc) 12%,var(--card))}
+.day.out{opacity:.45}
+.day .n{font-size:12px;font-weight:700}
+.day.sun .n{color:#d0453f}.day.sat .n{color:#3b7bd0}
+.tag{font-size:10px;line-height:1.3;padding:1px 3px;border-radius:3px;background:var(--c);color:#fff;white-space:nowrap;overflow:hidden}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;font-size:12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--c);margin-right:4px}
+.list div{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:3px 0;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
+.tot{font-size:22px;font-weight:700;color:var(--acc)}
+.mut{color:var(--sub);font-size:12px}
+@media(max-width:520px){.day{min-height:56px}.tag{font-size:9px}main{padding:10px}}
+</style>
+</head>
+<body>
+<main>
+<h1>給料計算ノート</h1>
+<section>
+<h2>職場</h2>
+<div id="wsList"></div>
+<button class="add" id="addWs" aria-label="職場を追加">＋</button>
+</section>
+<section>
+<h2>シフトのカレンダー</h2>
+<div class="nav"><button id="prev">‹ 前月</button><b id="ym"></b><button id="next">翌月 ›</button></div>
+<div class="legend" id="legend"></div>
+<div class="cal" id="cal"></div>
+<p class="mut">日にちをタップで選択（複数選択できます）。もう一度タップで解除。</p>
+</section>
+<section id="panel">
+<h2>勤務時間を入力</h2>
+<p class="mut" id="selInfo"></p>
+<div class="row">
+<label>職場<select id="pW"></select></label>
+<label>勤務時間<span class="rng"><input type="time" id="pS" value="17:00">～<input type="time" id="pE" value="22:00"></span></label>
+<button class="pri" id="apply">選択した日に入力</button>
+<button id="clear">選択解除</button>
+</div>
+<div class="list" id="shiftList"></div>
+</section>
+<section>
+<h2>給料の見込み</h2>
+<div id="sum"></div>
+</section>
+</main>
+<script>
+const COLORS=['#1f8a70','#d9822b','#4a6fd0','#c2456b','#8a5cc2','#3d9bb0'];
+const $=id=>document.getElementById(id);
+let S={ws:[],shifts:{}};
+try{const t=localStorage.getItem('salary-v1');if(t)S=JSON.parse(t)}catch(e){}
+if(!S.ws||!S.ws.length)S.ws=[newWs()];
+let view=new Date();view.setDate(1);
+let sel=new Set();
+function newWs(){return{id:'w'+Date.now()+Math.floor(Math.random()*999),name:'',wage:1100,nf:'22:00',nt:'05:00',nr:25,of:'',ot:'',or:25,close:31,payM:1,payD:25}}
+function save(){try{localStorage.setItem('salary-v1',JSON.stringify(S))}catch(e){}}
+const col=w=>COLORS[S.ws.indexOf(w)%COLORS.length];
+const wname=w=>w.name||'職場'+(S.ws.indexOf(w)+1);
+const pad=n=>String(n).padStart(2,'0');
+const key=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const tm=s=>{const [h,m]=s.split(':').map(Number);return h*60+m};
+function inWin(m,f,t){if(!f||!t)return false;f=tm(f);t=tm(t);m%=1440;if(f===t)return false;return f<t?(m>=f&&m<t):(m>=f||m<t)}
+function calc(sh,w){let s=tm(sh.s),e=tm(sh.e);if(e<=s)e+=1440;let n=0,o=0,pay=0;
+ for(let m=s;m<e;m++){const a=inWin(m,w.nf,w.nt),b=inWin(m,w.of,w.ot);if(a)n++;if(b)o++;
+  pay+=w.wage/60*(1+(a?w.nr/100:0)+(b?w.or/100:0))}
+ return{min:e-s,n,o,pay}}
+const hh=m=>(m/60).toFixed(2).replace(/\.?0+$/,'')+'h';
+const yen=n=>'¥'+Math.round(n).toLocaleString();
+
+function renderWs(){
+ $('wsList').innerHTML='';
+ S.ws.forEach((w,i)=>{
+  const d=document.createElement('div');d.className='ws';d.style.setProperty('--c',col(w));
+  d.innerHTML=`<div class="row">
+  <label>職場名<input type="text" data-k="name" value="${w.name.replace(/"/g,'&quot;')}" placeholder="例：コンビニ"></label>
+  <label>基本給（時給・円）<input type="number" data-k="wage" min="0" value="${w.wage}"></label>
+  <label>深夜手当の時間帯<span class="rng"><input type="time" data-k="nf" value="${w.nf}">～<input type="time" data-k="nt" value="${w.nt}"></span></label>
+  <label>割増（%）<input class="s" type="number" data-k="nr" min="0" value="${w.nr}"></label>
+  <label>残業手当の時間帯<span class="rng"><input type="time" data-k="of" value="${w.of}">～<input type="time" data-k="ot" value="${w.ot}"></span></label>
+  <label>割増（%）<input class="s" type="number" data-k="or" min="0" value="${w.or}"></label>
+  ${S.ws.length>1?'<button data-del="1" aria-label="この職場を削除">✕</button>':''}</div>
+  <div class="row">
+  <label>締め日<select data-k="close">${[...Array(30)].map((_,j)=>`<option value="${j+1}"${w.close==j+1?' selected':''}>${j+1}日</option>`).join('')}<option value="31"${w.close==31?' selected':''}>末日</option></select></label>
+  <label>給料日<span class="rng"><select data-k="payM">${['当月','翌月','翌々月'].map((t,j)=>`<option value="${j}"${w.payM==j?' selected':''}>${t}</option>`).join('')}</select><input class="s" type="number" data-k="payD" min="1" max="31" value="${w.payD}">日</span></label>
+  </div>`;
+  d.addEventListener('input',ev=>{const k=ev.target.dataset.k;if(!k)return;
+   const v=ev.target.value;w[k]=['wage','nr','or','close','payM','payD'].includes(k)?(Number(v)||0):v;
+   save();renderCal();renderSum();renderPanelSelect();renderLegend()});
+  d.addEventListener('click',ev=>{if(ev.target.dataset.del&&confirm('この職場とシフトを削除しますか？')){
+   S.ws=S.ws.filter(x=>x!==w);for(const k in S.shifts){S.shifts[k]=S.shifts[k].filter(x=>x.w!==w.id);if(!S.shifts[k].length)delete S.shifts[k]}
+   save();renderAll()}});
+  $('wsList').appendChild(d)})}
+
+function renderLegend(){$('legend').innerHTML=S.ws.map(w=>`<span style="--c:${col(w)}"><i></i>${wname(w)}</span>`).join('')}
+function renderPanelSelect(){const cur=$('pW').value;$('pW').innerHTML=S.ws.map(w=>`<option value="${w.id}">${wname(w)}</option>`).join('');if(cur)$('pW').value=cur}
+
+function renderCal(){
+ const y=view.getFullYear(),m=view.getMonth();$('ym').textContent=y+'年'+(m+1)+'月';
+ const first=new Date(y,m,1),start=new Date(y,m,1-first.getDay());
+ let h=['日','月','火','水','木','金','土'].map(t=>`<div class="dow">${t}</div>`).join('');
+ for(let i=0;i<42;i++){const d=new Date(start);d.setDate(start.getDate()+i);const k=key(d);
+  if(i>=35&&d.getMonth()!==m)break;
+  const tags=(S.shifts[k]||[]).map(x=>{const w=S.ws.find(q=>q.id===x.w);return w?`<span class="tag" style="--c:${col(w)}">${x.s}-${x.e}</span>`:''}).join('');
+  h+=`<button class="day${d.getMonth()!==m?' out':''}${sel.has(k)?' sel':''}${d.getDay()===0?' sun':''}${d.getDay()===6?' sat':''}" data-d="${k}" aria-pressed="${sel.has(k)}"><span class="n">${d.getDate()}</span>${tags}</button>`}
+ $('cal').innerHTML=h}
+
+function renderPanel(){
+ const ks=[...sel].sort();
+ $('selInfo').textContent=ks.length?ks.length+'日選択中：'+ks.map(k=>+k.slice(5,7)+'/'+ +k.slice(8)).join('、'):'カレンダーで日にちを選ぶと、ここで時間を入力できます。';
+ let h='';ks.forEach(k=>(S.shifts[k]||[]).forEach((x,i)=>{const w=S.ws.find(q=>q.id===x.w);if(!w)return;
+  h+=`<div><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${+k.slice(5,7)}/${+k.slice(8)} ${wname(w)} ${x.s}～${x.e}</span><button data-rm="${k}|${i}" aria-label="削除">✕</button></div>`}));
+ $('shiftList').innerHTML=h}
+
+function period(w,y,m){ // 締め日が属する月 y,m
+ const ld=(yy,mm)=>new Date(yy,mm+1,0).getDate();
+ const cd=(yy,mm)=>new Date(yy,mm,Math.min(w.close,ld(yy,mm)));
+ const end=cd(y,m),pe=cd(y,m-1),st=new Date(pe);st.setDate(pe.getDate()+1);
+ const pm=new Date(y,m+w.payM,1);const pay=new Date(pm.getFullYear(),pm.getMonth(),Math.min(w.payD||1,ld(pm.getFullYear(),pm.getMonth())));
+ return{st,end,pay}}
+const fd=d=>(d.getMonth()+1)+'/'+d.getDate();
+
+function renderSum(){
+ const y=view.getFullYear(),m=view.getMonth();let total=0,h='';
+ S.ws.forEach(w=>{const p=period(w,y,m),a=key(p.st),b=key(p.end);let min=0,n=0,o=0,pay=0,days=0;
+  for(const k in S.shifts){if(k<a||k>b)continue;S.shifts[k].filter(x=>x.w===w.id).forEach(x=>{const r=calc(x,w);min+=r.min;n+=r.n;o+=r.o;pay+=r.pay});if(S.shifts[k].some(x=>x.w===w.id))days++}
+  total+=pay;
+  h+=`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${wname(w)}<br><span class="mut">${fd(p.st)}～${fd(p.end)}／支給 ${p.pay.getFullYear()}/${fd(p.pay)}</span></td><td>${days}日<br>${hh(min)}</td><td>${hh(n)}</td><td>${hh(o)}</td><td>${yen(pay)}</td></tr>`});
+ $('sum').innerHTML=`<div class="mut">${y}年${m+1}月に締める分の合計（税・控除前）</div><div class="tot">${yen(total)}</div>
+ <div style="overflow-x:auto"><table><thead><tr><th>職場／期間</th><th>勤務</th><th>深夜</th><th>残業</th><th>支給額</th></tr></thead><tbody>${h}</tbody></table></div>`}
+
+function renderAll(){renderWs();renderLegend();renderPanelSelect();renderCal();renderPanel();renderSum()}
+
+$('cal').addEventListener('click',e=>{const b=e.target.closest('[data-d]');if(!b)return;const k=b.dataset.d;sel.has(k)?sel.delete(k):sel.add(k);renderCal();renderPanel()});
+$('prev').onclick=()=>{view.setMonth(view.getMonth()-1);renderCal();renderSum()};
+$('next').onclick=()=>{view.setMonth(view.getMonth()+1);renderCal();renderSum()};
+$('addWs').onclick=()=>{S.ws.push(newWs());save();renderAll()};
+$('clear').onclick=()=>{sel.clear();renderCal();renderPanel()};
+$('apply').onclick=()=>{
+ if(!sel.size){alert('先にカレンダーで日にちを選んでください');return}
+ const s=$('pS').value,e=$('pE').value,w=$('pW').value;if(!s||!e){alert('開始と終了の時刻を入力してください');return}
+ sel.forEach(k=>{const a=S.shifts[k]=S.shifts[k]||[];const i=a.findIndex(x=>x.w===w);const v={w,s,e};i>=0?a[i]=v:a.push(v)});
+ save();renderCal();renderPanel();renderSum()};
+$('shiftList').addEventListener('click',e=>{const r=e.target.dataset.rm;if(!r)return;const [k,i]=r.split('|');
+ S.shifts[k].splice(+i,1);if(!S.shifts[k].length)delete S.shifts[k];save();renderCal();renderPanel();renderSum()});
+renderAll();
+</script>
+</body>
+</html>
