@@ -66,15 +66,19 @@ th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right}th:fi
 <p class="mut" id="selInfo"></p>
 <div class="row">
 <label>職場<select id="pW"></select></label>
-<label>勤務時間<span class="rng"><input type="time" id="pS" value="17:00">～<input type="time" id="pE" value="22:00"></span></label>
+<div style="display:flex;flex-direction:column;gap:8px"><label>勤務時間<span class="rng"><input type="time" id="pS" value="17:00">～<input type="time" id="pE" value="22:00"></span></label><label>休憩（分）<input class="s" type="number" id="pB" min="0" value="0"></label></div>
 <button class="pri" id="apply">選択した日に入力</button>
 <button id="clear">選択解除</button>
 </div>
 <div class="list" id="shiftList"></div>
 </section>
 <section>
-<h2>給料の見込み</h2>
+<h2>給与の見込み</h2>
 <div id="sum"></div>
+</section>
+<section>
+<h2>時給金額の確認</h2>
+<div id="hourly"></div>
 </section>
 </main>
 <script>
@@ -83,9 +87,10 @@ const $=id=>document.getElementById(id);
 let S={ws:[],shifts:{}};
 try{const t=localStorage.getItem('salary-v1');if(t)S=JSON.parse(t)}catch(e){}
 if(!S.ws||!S.ws.length)S.ws=[newWs()];
+S.ws.forEach(w=>{w.type=w.type||'hourly';if(w.mh==null)w.mh=160;if(w.oh==null)w.oh=8;if(w.tr==null)w.tr=0});
 let view=new Date();view.setDate(1);
 let sel=new Set();
-function newWs(){return{id:'w'+Date.now()+Math.floor(Math.random()*999),name:'',wage:1100,nf:'22:00',nt:'05:00',nr:25,of:'',ot:'',or:25,close:31,payM:1,payD:25}}
+function newWs(){return{id:'w'+Date.now()+Math.floor(Math.random()*999),name:'',wage:1100,nf:'22:00',nt:'05:00',nr:25,oh:8,or:25,tr:0,type:'hourly',mh:160,close:31,payM:1,payD:25}}
 function save(){try{localStorage.setItem('salary-v1',JSON.stringify(S))}catch(e){}}
 const col=w=>COLORS[S.ws.indexOf(w)%COLORS.length];
 const wname=w=>w.name||'職場'+(S.ws.indexOf(w)+1);
@@ -93,10 +98,11 @@ const pad=n=>String(n).padStart(2,'0');
 const key=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const tm=s=>{const [h,m]=s.split(':').map(Number);return h*60+m};
 function inWin(m,f,t){if(!f||!t)return false;f=tm(f);t=tm(t);m%=1440;if(f===t)return false;return f<t?(m>=f&&m<t):(m>=f||m<t)}
-function calc(sh,w){let s=tm(sh.s),e=tm(sh.e);if(e<=s)e+=1440;let n=0,o=0,pay=0;
- for(let m=s;m<e;m++){const a=inWin(m,w.nf,w.nt),b=inWin(m,w.of,w.ot);if(a)n++;if(b)o++;
-  pay+=w.wage/60*(1+(a?w.nr/100:0)+(b?w.or/100:0))}
- return{min:e-s,n,o,pay}}
+function calc(sh,w){let s=tm(sh.s),e=tm(sh.e);if(e<=s)e+=1440;let n=0;
+ for(let m=s;m<e;m++)if(inWin(m,w.nf,w.nt))n++;
+ const tot=e-s,net=Math.max(0,tot-(+sh.b||0)),n2=tot?n*net/tot:0,o=Math.max(0,net-(w.oh||0)*60);
+ const mo=w.type==='monthly',hr=mo?w.wage/(w.mh||160):w.wage;
+ return{min:net,n:n2,o,base:mo?0:hr*net/60,prem:hr*(n2*w.nr+o*w.or)/6000}}
 const hh=m=>(m/60).toFixed(2).replace(/\.?0+$/,'')+'h';
 const yen=n=>'¥'+Math.round(n).toLocaleString();
 
@@ -106,19 +112,22 @@ function renderWs(){
   const d=document.createElement('div');d.className='ws';d.style.setProperty('--c',col(w));
   d.innerHTML=`<div class="row">
   <label>職場名<input type="text" data-k="name" value="${w.name.replace(/"/g,'&quot;')}" placeholder="例：コンビニ"></label>
-  <label>基本給（時給・円）<input type="number" data-k="wage" min="0" value="${w.wage}"></label>
+  <label>給与形態<select data-k="type"><option value="hourly"${w.type!=='monthly'?' selected':''}>時給</option><option value="monthly"${w.type==='monthly'?' selected':''}>月給</option></select></label>
+  <label>基本給（${w.type==='monthly'?'月給':'時給'}・円）<input type="number" data-k="wage" min="0" value="${w.wage}"></label>
+  ${w.type==='monthly'?`<label>月の所定労働時間（h・割増の時給換算用）<input class="s" type="number" data-k="mh" min="1" value="${w.mh}"></label>`:''}
   <label>深夜手当の時間帯<span class="rng"><input type="time" data-k="nf" value="${w.nf}">～<input type="time" data-k="nt" value="${w.nt}"></span></label>
   <label>割増（%）<input class="s" type="number" data-k="nr" min="0" value="${w.nr}"></label>
-  <label>残業手当の時間帯<span class="rng"><input type="time" data-k="of" value="${w.of}">～<input type="time" data-k="ot" value="${w.ot}"></span></label>
+  <label>残業手当<span class="rng">1日<input class="s" type="number" data-k="oh" min="0" step="0.5" value="${w.oh}">時間超</span></label>
   <label>割増（%）<input class="s" type="number" data-k="or" min="0" value="${w.or}"></label>
+  <label>交通費（1日・円）<input type="number" data-k="tr" min="0" value="${w.tr}"></label>
   ${S.ws.length>1?'<button data-del="1" aria-label="この職場を削除">✕</button>':''}</div>
   <div class="row">
   <label>締め日<select data-k="close">${[...Array(30)].map((_,j)=>`<option value="${j+1}"${w.close==j+1?' selected':''}>${j+1}日</option>`).join('')}<option value="31"${w.close==31?' selected':''}>末日</option></select></label>
   <label>給料日<span class="rng"><select data-k="payM">${['当月','翌月','翌々月'].map((t,j)=>`<option value="${j}"${w.payM==j?' selected':''}>${t}</option>`).join('')}</select><input class="s" type="number" data-k="payD" min="1" max="31" value="${w.payD}">日</span></label>
   </div>`;
   d.addEventListener('input',ev=>{const k=ev.target.dataset.k;if(!k)return;
-   const v=ev.target.value;w[k]=['wage','nr','or','close','payM','payD'].includes(k)?(Number(v)||0):v;
-   save();renderCal();renderSum();renderPanelSelect();renderLegend()});
+   const v=ev.target.value;w[k]=['wage','nr','or','oh','tr','mh','close','payM','payD'].includes(k)?(Number(v)||0):v;
+   save();if(k==='type')renderWs();renderCal();renderSum();renderPanelSelect();renderLegend()});
   d.addEventListener('click',ev=>{if(ev.target.dataset.del&&confirm('この職場とシフトを削除しますか？')){
    S.ws=S.ws.filter(x=>x!==w);for(const k in S.shifts){S.shifts[k]=S.shifts[k].filter(x=>x.w!==w.id);if(!S.shifts[k].length)delete S.shifts[k]}
    save();renderAll()}});
@@ -141,7 +150,7 @@ function renderPanel(){
  const ks=[...sel].sort();
  $('selInfo').textContent=ks.length?ks.length+'日選択中：'+ks.map(k=>+k.slice(5,7)+'/'+ +k.slice(8)).join('、'):'カレンダーで日にちを選ぶと、ここで時間を入力できます。';
  let h='';ks.forEach(k=>(S.shifts[k]||[]).forEach((x,i)=>{const w=S.ws.find(q=>q.id===x.w);if(!w)return;
-  h+=`<div><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${+k.slice(5,7)}/${+k.slice(8)} ${wname(w)} ${x.s}～${x.e}</span><button data-rm="${k}|${i}" aria-label="削除">✕</button></div>`}));
+  h+=`<div><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${+k.slice(5,7)}/${+k.slice(8)} ${wname(w)} ${x.s}～${x.e}（休憩${x.b||0}分）</span><button data-rm="${k}|${i}" aria-label="削除">✕</button></div>`}));
  $('shiftList').innerHTML=h}
 
 function period(w,y,m){ // 締め日が属する月 y,m
@@ -153,13 +162,16 @@ function period(w,y,m){ // 締め日が属する月 y,m
 const fd=d=>(d.getMonth()+1)+'/'+d.getDate();
 
 function renderSum(){
- const y=view.getFullYear(),m=view.getMonth();let total=0,h='';
- S.ws.forEach(w=>{const p=period(w,y,m),a=key(p.st),b=key(p.end);let min=0,n=0,o=0,pay=0,days=0;
-  for(const k in S.shifts){if(k<a||k>b)continue;S.shifts[k].filter(x=>x.w===w.id).forEach(x=>{const r=calc(x,w);min+=r.min;n+=r.n;o+=r.o;pay+=r.pay});if(S.shifts[k].some(x=>x.w===w.id))days++}
-  total+=pay;
-  h+=`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${wname(w)}<br><span class="mut">${fd(p.st)}～${fd(p.end)}／支給 ${p.pay.getFullYear()}/${fd(p.pay)}</span></td><td>${days}日<br>${hh(min)}</td><td>${hh(n)}</td><td>${hh(o)}</td><td>${yen(pay)}</td></tr>`});
+ const y=view.getFullYear(),m=view.getMonth();let total=0,h='',HL=[];
+ S.ws.forEach(w=>{const p=period(w,y,m),a=key(p.st),b=key(p.end);let min=0,n=0,o=0,base=0,prem=0,days=0;
+  for(const k in S.shifts){if(k<a||k>b)continue;S.shifts[k].filter(x=>x.w===w.id).forEach(x=>{const r=calc(x,w);min+=r.min;n+=r.n;o+=r.o;base+=r.base;prem+=r.prem});if(S.shifts[k].some(x=>x.w===w.id))days++}
+  if(w.type==='monthly')base=w.wage;const tr=days*w.tr,pay=base+prem+tr;total+=pay;HL.push({w,base,min});
+  h+=`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${wname(w)}<br><span class="mut">${fd(p.st)}～${fd(p.end)}／支給 ${p.pay.getFullYear()}/${fd(p.pay)}</span></td><td>${days}日<br>${hh(min)}</td><td>${hh(n)}</td><td>${hh(o)}</td><td>${yen(tr)}</td><td>${yen(pay)}</td></tr>`});
  $('sum').innerHTML=`<div class="mut">${y}年${m+1}月に締める分の合計（税・控除前）</div><div class="tot">${yen(total)}</div>
- <div style="overflow-x:auto"><table><thead><tr><th>職場／期間</th><th>勤務</th><th>深夜</th><th>残業</th><th>支給額</th></tr></thead><tbody>${h}</tbody></table></div>`}
+ <div style="overflow-x:auto"><table><thead><tr><th>職場／期間</th><th>勤務</th><th>深夜</th><th>残業</th><th>交通費</th><th>支給額</th></tr></thead><tbody>${h}</tbody></table></div><p class="mut">支給額 ＝ 基本給（月給は固定）＋ 深夜・残業の割増 ＋ 交通費（勤務日数分）。休憩は実働時間から差し引きます。</p>`;renderHourly(HL)}
+function renderHourly(HL){let tb=0,tmin=0;
+ const h=HL.map(({w,base,min})=>{tb+=base;tmin+=min;return `<tr><td>${wname(w)}</td><td>${yen(base)}</td><td>${hh(min)}</td><td>${min?yen(base/(min/60)):'―'}</td></tr>`}).join('');
+ $('hourly').innerHTML=`<div style="overflow-x:auto"><table><thead><tr><th>職場</th><th>基本給の合計</th><th>実働時間</th><th>時給</th></tr></thead><tbody>${h}</tbody></table></div><p class="mut">基本給の合計 ÷ 実働時間（休憩を除く）で計算。割増・交通費は含みません。${HL.length>1?'全職場まとめると '+(tmin?yen(tb/(tmin/60)):'―')+'/h':''}</p>`}
 
 function renderAll(){renderWs();renderLegend();renderPanelSelect();renderCal();renderPanel();renderSum()}
 
@@ -170,8 +182,8 @@ $('addWs').onclick=()=>{S.ws.push(newWs());save();renderAll()};
 $('clear').onclick=()=>{sel.clear();renderCal();renderPanel()};
 $('apply').onclick=()=>{
  if(!sel.size){alert('先にカレンダーで日にちを選んでください');return}
- const s=$('pS').value,e=$('pE').value,w=$('pW').value;if(!s||!e){alert('開始と終了の時刻を入力してください');return}
- sel.forEach(k=>{const a=S.shifts[k]=S.shifts[k]||[];const i=a.findIndex(x=>x.w===w);const v={w,s,e};i>=0?a[i]=v:a.push(v)});
+ const s=$('pS').value,e=$('pE').value,w=$('pW').value,b=Math.max(0,Number($('pB').value)||0);if(!s||!e){alert('開始と終了の時刻を入力してください');return}
+ sel.forEach(k=>{const a=S.shifts[k]=S.shifts[k]||[];const i=a.findIndex(x=>x.w===w);const v={w,s,e,b};i>=0?a[i]=v:a.push(v)});
  save();renderCal();renderPanel();renderSum()};
 $('shiftList').addEventListener('click',e=>{const r=e.target.dataset.rm;if(!r)return;const [k,i]=r.split('|');
  S.shifts[k].splice(+i,1);if(!S.shifts[k].length)delete S.shifts[k];save();renderCal();renderPanel();renderSum()});
