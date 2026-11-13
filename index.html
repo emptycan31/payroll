@@ -43,12 +43,16 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
 .tot{font-size:22px;font-weight:700;color:var(--acc)}
 .mut{color:var(--sub);font-size:12px}
+[hidden]{display:none!important}
+.tabs{display:flex;gap:6px;margin-bottom:12px}.tabs button{flex:1;font-weight:700}.tabs .on{background:var(--acc);color:var(--bg);border-color:var(--acc)}
 @media(max-width:520px){.day{min-height:56px}.tag{font-size:9px}main{padding:10px}}
 </style>
 </head>
 <body>
 <main>
 <h1>給与計算ノート</h1>
+<div class="tabs"><button id="tPay" class="on">給与</button><button id="tLv">休暇</button></div>
+<div id="tabPay">
 <section>
 <h2>職場</h2>
 <div id="wsList"></div>
@@ -64,11 +68,11 @@ th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right}th:fi
 <section id="panel">
 <h2>勤務時間を入力</h2>
 <p class="mut" id="selInfo"></p>
-<div class="row">
+<div class="row" style="align-items:flex-start">
 <label>職場<select id="pW"></select></label>
 <div style="display:flex;flex-direction:column;gap:8px"><label>勤務時間<span class="rng"><input type="time" id="pS" value="17:00">～<input type="time" id="pE" value="22:00"></span></label><label>休憩（分）<input class="s" type="number" id="pB" min="0" value="0"></label></div>
-<button class="pri" id="apply">選択した日に入力</button>
-<button id="clear">選択解除</button>
+<button class="pri" id="apply" style="align-self:flex-end">選択した日に入力</button>
+<button id="clear" style="align-self:flex-end">選択解除</button>
 </div>
 <div class="list" id="shiftList"></div>
 </section>
@@ -80,6 +84,11 @@ th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right}th:fi
 <h2>時給金額の確認</h2>
 <div id="hourly"></div>
 </section>
+</div>
+<div id="tabLv" hidden>
+<div id="lvList"></div>
+<button class="add" id="addWs2" aria-label="職場を追加">＋</button>
+</div>
 </main>
 <script>
 const COLORS=['#1f8a70','#d9822b','#4a6fd0','#c2456b','#8a5cc2','#3d9bb0'];
@@ -87,10 +96,10 @@ const $=id=>document.getElementById(id);
 let S={ws:[],shifts:{}};
 try{const t=localStorage.getItem('salary-v1');if(t)S=JSON.parse(t)}catch(e){}
 if(!S.ws||!S.ws.length)S.ws=[newWs()];
-S.ws.forEach(w=>{w.type=w.type||'hourly';if(w.mh==null)w.mh=160;if(w.oh==null)w.oh=8;if(w.tr==null)w.tr=0});
+S.ws.forEach(w=>{w.type=w.type||'hourly';if(w.mh==null)w.mh=160;if(w.oh==null)w.oh=8;if(w.tr==null)w.tr=0;if(!w.trT)w.trT='day';if(!w.lv)w.lv={start:'',mode:'same',granted:0,hpd:8,hist:[]};w.lv.fm=w.lv.fm||'6m';w.lv.fd=w.lv.fd||''});
 let view=new Date();view.setDate(1);
 let sel=new Set();
-function newWs(){return{id:'w'+Date.now()+Math.floor(Math.random()*999),name:'',wage:1100,nf:'22:00',nt:'05:00',nr:25,oh:8,or:25,tr:0,type:'hourly',mh:160,close:31,payM:1,payD:25}}
+function newWs(){return{id:'w'+Date.now()+Math.floor(Math.random()*999),name:'',wage:1100,nf:'22:00',nt:'05:00',nr:25,oh:8,or:25,tr:0,trT:'day',type:'hourly',mh:160,close:31,payM:1,payD:25,lv:{start:'',mode:'same',fm:'6m',fd:'',granted:0,hpd:8,hist:[]}}}
 function save(){try{localStorage.setItem('salary-v1',JSON.stringify(S))}catch(e){}}
 const col=w=>COLORS[S.ws.indexOf(w)%COLORS.length];
 const wname=w=>w.name||'職場'+(S.ws.indexOf(w)+1);
@@ -115,21 +124,22 @@ function renderWs(){
   <label>給与形態<select data-k="type"><option value="hourly"${w.type!=='monthly'?' selected':''}>時給</option><option value="monthly"${w.type==='monthly'?' selected':''}>月給</option></select></label>
   <label>基本給（${w.type==='monthly'?'月給':'時給'}・円）<input type="number" data-k="wage" min="0" value="${w.wage}"></label>
   ${w.type==='monthly'?`<label>月の所定労働時間（h・割増の時給換算用）<input class="s" type="number" data-k="mh" min="1" value="${w.mh}"></label>`:''}
-  <label>深夜手当の時間帯<span class="rng"><input type="time" data-k="nf" value="${w.nf}">～<input type="time" data-k="nt" value="${w.nt}"></span></label>
+  <label>深夜手当の時間帯<span class="rng"><input type="time" data-k="nf" value="${w.nf}" style="width:5.8em;padding:5px 3px">～<input type="time" data-k="nt" value="${w.nt}" style="width:5.8em;padding:5px 3px"></span></label>
   <label>割増（%）<input class="s" type="number" data-k="nr" min="0" value="${w.nr}"></label>
   <label>残業手当<span class="rng">1日<input class="s" type="number" data-k="oh" min="0" step="0.5" value="${w.oh}">時間超</span></label>
   <label>割増（%）<input class="s" type="number" data-k="or" min="0" value="${w.or}"></label>
-  <label>交通費（1日・円）<input type="number" data-k="tr" min="0" value="${w.tr}"></label>
-  ${S.ws.length>1?'<button data-del="1" aria-label="この職場を削除">✕</button>':''}</div>
+  <label>交通費<span class="rng"><select data-k="trT"><option value="day"${w.trT!=='month'?' selected':''}>1日</option><option value="month"${w.trT==='month'?' selected':''}>1か月</option></select><input type="number" data-k="tr" min="0" value="${w.tr}">円</span></label>
+  </div>
   <div class="row">
   <label>締め日<select data-k="close">${[...Array(30)].map((_,j)=>`<option value="${j+1}"${w.close==j+1?' selected':''}>${j+1}日</option>`).join('')}<option value="31"${w.close==31?' selected':''}>末日</option></select></label>
   <label>給料日<span class="rng"><select data-k="payM">${['当月','翌月','翌々月'].map((t,j)=>`<option value="${j}"${w.payM==j?' selected':''}>${t}</option>`).join('')}</select><input class="s" type="number" data-k="payD" min="1" max="31" value="${w.payD}">日</span></label>
+  <button data-del="1" style="margin-left:auto">削除</button>
   </div>`;
   d.addEventListener('input',ev=>{const k=ev.target.dataset.k;if(!k)return;
    const v=ev.target.value;w[k]=['wage','nr','or','oh','tr','mh','close','payM','payD'].includes(k)?(Number(v)||0):v;
    save();if(k==='type')renderWs();renderCal();renderSum();renderPanelSelect();renderLegend()});
-  d.addEventListener('click',ev=>{if(ev.target.dataset.del&&confirm('この職場とシフトを削除しますか？')){
-   S.ws=S.ws.filter(x=>x!==w);for(const k in S.shifts){S.shifts[k]=S.shifts[k].filter(x=>x.w!==w.id);if(!S.shifts[k].length)delete S.shifts[k]}
+  d.addEventListener('click',ev=>{const bt=ev.target;if(!bt.dataset||!bt.dataset.del)return;if(!bt.dataset.arm){bt.dataset.arm='1';bt.textContent='もう一度押すと削除';setTimeout(()=>{bt.dataset.arm='';bt.textContent='削除'},3000);return}{
+   S.ws=S.ws.filter(x=>x!==w);if(!S.ws.length)S.ws.push(newWs());for(const k in S.shifts){S.shifts[k]=S.shifts[k].filter(x=>x.w!==w.id);if(!S.shifts[k].length)delete S.shifts[k]}
    save();renderAll()}});
   $('wsList').appendChild(d)})}
 
@@ -165,15 +175,60 @@ function renderSum(){
  const y=view.getFullYear(),m=view.getMonth();let total=0,h='',HL=[];
  S.ws.forEach(w=>{const p=period(w,y,m),a=key(p.st),b=key(p.end);let min=0,n=0,o=0,base=0,prem=0,days=0;
   for(const k in S.shifts){if(k<a||k>b)continue;S.shifts[k].filter(x=>x.w===w.id).forEach(x=>{const r=calc(x,w);min+=r.min;n+=r.n;o+=r.o;base+=r.base;prem+=r.prem});if(S.shifts[k].some(x=>x.w===w.id))days++}
-  if(w.type==='monthly')base=w.wage;const tr=days*w.tr,pay=base+prem+tr;total+=pay;HL.push({w,base,min});
-  h+=`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${wname(w)}<br><span class="mut">${fd(p.st)}～${fd(p.end)}／支給 ${p.pay.getFullYear()}/${fd(p.pay)}</span></td><td>${days}日<br>${hh(min)}</td><td>${hh(n)}</td><td>${hh(o)}</td><td>${yen(tr)}</td><td>${yen(pay)}</td></tr>`});
+  if(w.type==='monthly')base=w.wage;const tr=w.trT==='month'?(days?w.tr:0):days*w.tr,pay=base+prem+tr;total+=pay;HL.push({w,base,min});
+  h+=`<tr><td><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${col(w)};margin-right:6px"></i>${wname(w)}<br><span class="mut">${fd(p.st)}～${fd(p.end)}<br>${p.pay.getFullYear()}/${fd(p.pay)} 支給</span></td><td>${days}日<br>${hh(min)}</td><td>${hh(n)}</td><td>${hh(o)}</td><td>${yen(tr)}</td><td>${yen(pay)}</td></tr>`});
  $('sum').innerHTML=`<div class="mut">${y}年${m+1}月に締める分の合計（税・控除前）</div><div class="tot">${yen(total)}</div>
- <div style="overflow-x:auto"><table><thead><tr><th>職場／期間</th><th>勤務</th><th>深夜</th><th>残業</th><th>交通費</th><th>支給額</th></tr></thead><tbody>${h}</tbody></table></div><p class="mut">支給額 ＝ 基本給（月給は固定）＋ 深夜・残業の割増 ＋ 交通費（勤務日数分）。休憩は実働時間から差し引きます。</p>`;renderHourly(HL)}
+ <div style="overflow-x:auto"><table><thead><tr><th>職場／期間</th><th>勤務</th><th>深夜</th><th>残業</th><th>交通費</th><th>支給額</th></tr></thead><tbody>${h}</tbody></table></div><p class="mut">支給額 ＝ 基本給（月給は固定）＋ 深夜・残業の割増 ＋ 交通費（1日単位は勤務日数分、1か月単位は勤務日がある期間に限って固定額）。休憩は実働時間から差し引きます。</p>`;renderHourly(HL)}
 function renderHourly(HL){let tb=0,tmin=0;
  const h=HL.map(({w,base,min})=>{tb+=base;tmin+=min;return `<tr><td>${wname(w)}</td><td>${yen(base)}</td><td>${hh(min)}</td><td>${min?yen(base/(min/60)):'―'}</td></tr>`}).join('');
  $('hourly').innerHTML=`<div style="overflow-x:auto"><table><thead><tr><th>職場</th><th>基本給の合計</th><th>実働時間</th><th>時給</th></tr></thead><tbody>${h}</tbody></table></div><p class="mut">基本給の合計 ÷ 実働時間（休憩を除く）で計算。割増・交通費は含みません。${HL.length>1?'全職場まとめると '+(tmin?yen(tb/(tmin/60)):'―')+'/h':''}</p>`}
 
-function renderAll(){renderWs();renderLegend();renderPanelSelect();renderCal();renderPanel();renderSum()}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fdate=d=>d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日';
+function lvDates(lv){const fm=lv.fm||'6m',src=fm==='date'?lv.fd:lv.start;if(!src)return null;const s=new Date(src+'T00:00:00');if(isNaN(s))return null;
+ const g1=fm==='6m'?new Date(s.getFullYear(),s.getMonth()+6,s.getDate()):s,t=new Date();t.setHours(0,0,0,0);
+ if(t<g1)return{g1,cur:null,nxt:g1};
+ if(lv.mode==='fiscal'){const y=t.getFullYear()-(new Date(t.getFullYear(),3,1)<=t?0:1),ap=new Date(y,3,1);return{g1,cur:ap>g1?ap:g1,nxt:new Date(y+1,3,1)}}
+ let c=new Date(t.getFullYear(),g1.getMonth(),g1.getDate());if(c>t)c=new Date(t.getFullYear()-1,g1.getMonth(),g1.getDate());
+ return{g1,cur:c,nxt:new Date(c.getFullYear()+1,c.getMonth(),c.getDate())}}
+function fmtRem(lv){const day=(lv.hpd||8)*60,rem=Math.round(lv.granted*day-lv.hist.filter(h=>h.t==='paid').reduce((a,h)=>a+h.m,0)),a=Math.abs(rem),hr=(a%day)/60;return (rem<0?'−':'')+Math.floor(a/day)+'日 '+(+hr.toFixed(2))+'時間'}
+function fmtAmt(h){return h.u==='day'?'一日':h.u==='time'?h.f+'～'+h.e+'（'+(+(h.m/60).toFixed(2))+'時間）':'半日（'+(h.u==='am'?'AM':'PM')+'）'}
+function updLv(w,c){const lv=w.lv,D=lvDates(lv);c.querySelector('.lvRem').textContent=fmtRem(lv);
+ c.querySelector('.lvNext').textContent=D?fdate(D.nxt):'―';c.querySelector('.lvUsed').textContent='取得日数：'+(+(lv.hist.filter(h=>h.t==='paid').reduce((a,h)=>a+h.m,0)/((lv.hpd||8)*60)).toFixed(2))+'日'}
+function renderLv(){const box=$('lvList');box.innerHTML='';
+ S.ws.forEach(w=>{const lv=w.lv,c=document.createElement('div');c.className='ws';c.style.setProperty('--c',col(w));
+  const rows=lv.hist.map((h,i)=>({h,i})).sort((a,b)=>a.h.d<b.h.d?1:-1).map(({h,i})=>`<tr><td>${h.d}</td><td>${h.t==='paid'?'有給休暇':esc(h.n||'休暇')}</td><td>${fmtAmt(h)}</td><td><button data-rm="${i}">削除</button></td></tr>`).join('');
+  c.innerHTML=`<div class="row" style="align-items:flex-start;gap:8px 32px"><div><div class="mut">有給休暇の残り</div><div class="tot lvRem"></div></div><div><div class="mut">次回付与日</div><div class="tot lvNext"></div></div></div>
+  <div class="row"><label>職場名<input type="text" data-k="name" value="${esc(w.name)}" placeholder="職場"></label>
+  <label>勤務開始日<input type="date" data-k="start" value="${lv.start}"></label>
+  <label>初回付与<select data-k="fm"><option value="6m">開始から6か月後</option><option value="start"${lv.fm==='start'?' selected':''}>勤務開始日</option><option value="date"${lv.fm==='date'?' selected':''}>日付入力</option></select></label>
+  <label class="fd"${lv.fm==='date'?'':' hidden'}>初回付与日<input type="date" data-k="fd" value="${lv.fd}"></label>
+  <label>付与の時期<select data-k="mode"><option value="same">同一時期（毎年同じ日）</option><option value="fiscal"${lv.mode==='fiscal'?' selected':''}>年度ごと（4月1日）</option></select></label></div>
+  <div class="row"><label>付与された日数（日）<input class="s" type="number" min="0" step="0.5" data-k="granted" value="${lv.granted}"></label><label>1日の所定労働時間（h）<input class="s" type="number" min="0" step="0.5" data-k="hpd" value="${lv.hpd}"></label></div>
+  <h2 style="margin-top:12px">申請した休暇を記録する</h2>
+  <div class="row"><label>種類<select data-f="t"><option value="paid">有給休暇</option><option value="free">自由入力</option></select></label>
+  <label class="fn" hidden>休暇名<input type="text" data-f="n" placeholder="例：特別休暇"></label>
+  <label>取得日<input type="date" data-f="d" value="${key(new Date())}"></label>
+  <label>取得単位<select data-f="u"><option value="day">一日</option><option value="am">半日（AM）</option><option value="pm">半日（PM）</option><option value="time">時間</option></select></label>
+  <span class="rng ft" hidden><input type="time" data-f="from" value="09:00">～<input type="time" data-f="to" value="10:00"></span>
+  <button class="pri" data-add="1">履歴に追加</button></div>
+  <p class="mut lvMsg"></p>
+  <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px"><h2 style="margin:0 0 10px">取得履歴</h2><span class="lvUsed" style="font-weight:700"></span></div><div style="overflow-x:auto"><table><thead><tr><th>取得日</th><th>種類</th><th>取得単位</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="4">まだ記録がありません</td></tr>'}</tbody></table></div>`;
+  c.addEventListener('input',e=>{const t=e.target,k=t.dataset.k,f=t.dataset.f;
+   if(k){if(k==='name')w.name=t.value;else lv[k]=(k==='granted'||k==='hpd')?(Number(t.value)||0):t.value;save();if(k==='fm')c.querySelector('.fd').hidden=t.value!=='date';updLv(w,c)}
+   if(f){c.querySelector('.fn').hidden=c.querySelector('[data-f=t]').value!=='free';c.querySelector('.ft').hidden=c.querySelector('[data-f=u]').value!=='time'}});
+  c.addEventListener('click',e=>{const t=e.target;if(!t.dataset)return;
+   if(t.dataset.rm!=null&&t.dataset.rm!==''){lv.hist.splice(+t.dataset.rm,1);save();renderLv();return}
+   if(!t.dataset.add)return;const q=s=>c.querySelector('[data-f='+s+']').value,msg=x=>{c.querySelector('.lvMsg').textContent=x};
+   const ty=q('t'),u=q('u'),d=q('d'),day=(lv.hpd||8)*60;let m=u==='day'?day:day/2,fr='',to='';
+   if(!d){msg('取得日を入力してください');return}
+   if(u==='time'){fr=q('from');to=q('to');if(!fr||!to){msg('開始と終了の時刻を入力してください');return}m=tm(to)-tm(fr);if(m<=0){msg('終了時刻は開始より後にしてください');return}}
+   lv.hist.push({d,t:ty,n:ty==='free'?q('n'):'',u,f:fr,e:to,m});save();renderLv()});
+  box.appendChild(c);updLv(w,c)})}
+function setTab(t){try{localStorage.setItem('salary-tab',t)}catch(e){}$('tabPay').hidden=t!=='pay';$('tabLv').hidden=t!=='lv';$('tPay').className=t==='pay'?'on':'';$('tLv').className=t==='lv'?'on':'';if(t==='lv')renderLv()}
+$('tPay').onclick=()=>setTab('pay');$('tLv').onclick=()=>setTab('lv');
+$('addWs2').onclick=()=>{S.ws.push(newWs());save();renderAll()};
+function renderAll(){renderWs();renderLegend();renderPanelSelect();renderCal();renderPanel();renderSum();renderLv()}
 
 $('cal').addEventListener('click',e=>{const b=e.target.closest('[data-d]');if(!b)return;const k=b.dataset.d;sel.has(k)?sel.delete(k):sel.add(k);renderCal();renderPanel()});
 $('prev').onclick=()=>{view.setMonth(view.getMonth()-1);renderCal();renderSum()};
@@ -181,13 +236,14 @@ $('next').onclick=()=>{view.setMonth(view.getMonth()+1);renderCal();renderSum()}
 $('addWs').onclick=()=>{S.ws.push(newWs());save();renderAll()};
 $('clear').onclick=()=>{sel.clear();renderCal();renderPanel()};
 $('apply').onclick=()=>{
- if(!sel.size){alert('先にカレンダーで日にちを選んでください');return}
- const s=$('pS').value,e=$('pE').value,w=$('pW').value,b=Math.max(0,Number($('pB').value)||0);if(!s||!e){alert('開始と終了の時刻を入力してください');return}
+ if(!sel.size){$('selInfo').textContent='先にカレンダーで日にちを選んでください';return}
+ const s=$('pS').value,e=$('pE').value,w=$('pW').value,b=Math.max(0,Number($('pB').value)||0);if(!s||!e){$('selInfo').textContent='開始と終了の時刻を入力してください';return}
  sel.forEach(k=>{const a=S.shifts[k]=S.shifts[k]||[];const i=a.findIndex(x=>x.w===w);const v={w,s,e,b};i>=0?a[i]=v:a.push(v)});
  save();renderCal();renderPanel();renderSum()};
 $('shiftList').addEventListener('click',e=>{const r=e.target.dataset.rm;if(!r)return;const [k,i]=r.split('|');
  S.shifts[k].splice(+i,1);if(!S.shifts[k].length)delete S.shifts[k];save();renderCal();renderPanel();renderSum()});
 renderAll();
+try{if(localStorage.getItem('salary-tab')==='lv')setTab('lv')}catch(e){}
 </script>
 </body>
 </html>
